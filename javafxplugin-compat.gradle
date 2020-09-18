@@ -1,0 +1,164 @@
+import groovy.json.JsonOutput
+import groovy.json.JsonSlurperClassic
+
+def currentOS = org.gradle.internal.os.OperatingSystem.current()
+def isRunningInIdea = Boolean.parseBoolean(System.getProperty("idea.active"))
+def isSupportJavaModule = JavaVersion.current().toString().toFloat() > 1.8 || JavaVersion.current().isJava10()
+
+class SimpleArgs {
+    private final File mPropertiesFile
+    private final Properties mProperties
+    private final String commitMessage = "javafxplugin-compat-0.0.1"
+
+    SimpleArgs(File propertiesFile) {
+        this.mPropertiesFile = propertiesFile
+        this.mProperties = new Properties()
+        if (!mPropertiesFile.exists()) {
+            mPropertiesFile.createNewFile()
+        }
+        this.mProperties.load(mPropertiesFile.newReader("utf-8"))
+    }
+
+    private void apply() {
+        this.mProperties.store(mPropertiesFile.newWriter(), commitMessage)
+    }
+
+    String getValue(Args args) {
+        if (mProperties.containsKey(args.propName)) {
+            return this.mProperties.getProperty(args.propName, args.defaultValue)
+        } else {
+            this.mProperties.setProperty(args.propName, args.defaultValue)
+            apply()
+            return args.defaultValue
+        }
+    }
+
+
+    String[] getValueArray(Args args) {
+        List<String> valueList = new JsonSlurperClassic().parseText(getValue(args)) as List<String>
+        if (args == Args.javafxModules) {
+            valueList = valueList.collect { it.replaceAll("-", ".") }//Error correction processing
+        }
+        return valueList.toArray(new String[0])
+    }
+
+    void check() {
+        Args.values().each {
+            println("javafxplugin-compat-args: ${it.propName}=${getValue(it)}")
+        }
+    }
+}
+
+enum Args {
+    /**
+     * <a href="https://mvnrepository.com/artifact/org.openjfx/javafx-base">org.openjfx:javafx-base:version</a>
+     */
+    javafxVersion("javafx.version", "15"),
+    /**
+     * <a href="https://github.com/openjfx/javafx-gradle-plugin/releases">javafx-gradle-plugin</a>
+     */
+    javafxPluginVersion("javafx.pluginVersion", "0.0.9"),
+    /**
+     * <a href="https://mvnrepository.com/artifact/org.openjfx">javafx.modules</a>
+     */
+    javafxModules("javafx.modules", JsonOutput.toJson(["javafx.base"])),
+    /**
+     * name of application's 'module-info.java'
+     */
+    javafxMainModule("javafx.mainModule", "")
+
+    final String propName
+    final String defaultValue
+
+    private Args(String propName, String defaultValue) {
+        this.propName = propName
+        this.defaultValue = defaultValue
+    }
+
+}
+
+SimpleArgs simpleArgs = new SimpleArgs(new File(projectDir, 'javafxplugin-compat.properties'))
+
+simpleArgs.check()
+
+
+compileKotlin {
+    String jvmTargetString = JavaVersion.current().toString()
+    if (JavaVersion.current().isJava10()) {
+        jvmTargetString = "10"
+        println("not support java10")
+    } else if (JavaVersion.current().isJava9()) {
+        jvmTargetString = "9"
+        println("not support java9")
+    }
+    kotlinOptions.jvmTarget = jvmTargetString
+}
+compileTestKotlin {
+    kotlinOptions.jvmTarget = compileKotlin.kotlinOptions.jvmTarget
+}
+
+
+if (isSupportJavaModule) {
+    apply plugin: "org.openjfx.javafxplugin"
+
+    application {
+        mainModule.set(simpleArgs.getValue(Args.javafxMainModule))
+    }
+
+    javafx {
+        version = simpleArgs.getValue(Args.javafxVersion)
+        modules = simpleArgs.getValueArray(Args.javafxModules)
+        configuration = "api"
+    }
+} else {
+    sourceSets {
+        main {
+            java {
+                println("..............java9以下排除module-info.java文件")
+                exclude 'module-info.java'//java9以下排除module-info.java文件
+            }
+        }
+    }
+    java {
+        sourceCompatibility = JavaVersion.current()
+        modularity.inferModulePath = false
+    }
+    kotlin {
+        sourceCompatibility == JavaVersion.current()
+    }
+}
+
+
+if (plugins.hasPlugin("application")) {
+    configurations {
+        api {
+            setCanBeConsumed(true)
+            setCanBeResolved(true)
+        }
+        implementation {
+            setCanBeConsumed(true)
+            setCanBeResolved(true)
+        }
+    }
+    task runnableJar(type: Jar, dependsOn: [jar], group: "build") {
+        manifest {
+            attributes(
+                    "Manifest-Version": project.version,
+//                "Class-Path": configurations.api.collect { it.getName() }.join(" "),
+                    "Main-Class": mainClassName
+            )
+        }
+        def sourceTree = configurations.api.collect { entry -> zipTree(entry) }
+        sourceTree.add(zipTree(jar.archiveFile.get().asFile))//加入项目源码编译后的jar
+        sourceTree.addAll(configurations.implementation.collect { entry -> zipTree(entry) })
+//        sourceTree.addAll(configurations.compile.collect { entry -> zipTree(entry) })
+        from(sourceTree) {
+            exclude "META-INF/MANIFEST.MF"
+            exclude "META-INF/*.SF"
+            exclude "META-INF/*.DSA"
+            exclude "META-INF/*.RSA"
+        }
+        archiveName("${archiveBaseName.get()}-${JavaVersion.current().toString()}-v${archiveVersion.get()}.${archiveExtension.get()}")
+        destinationDir(file("out/runnableJar"))
+    }
+}

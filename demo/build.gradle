@@ -1,0 +1,39 @@
+buildscript {
+    repositories {
+        maven {
+            url "https://maven.aliyun.com/repository/gradle-plugin"
+        }
+    }
+    dependencies {
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+        classpath "org.openjfx:javafx-plugin:0.0.9"
+    }
+}
+
+apply plugin: "kotlin"
+apply plugin: "application"
+
+group 'org.ningopensource'
+version '1.0.1'
+mainClassName = 'org.ningopensource.OfflineReader.Launcher'
+
+allprojects {
+    repositories {
+        google {
+            url "https://maven.aliyun.com/repository/google"
+        }
+        jcenter {
+            url "https://maven.aliyun.com/repository/public"
+        }
+        mavenCentral {
+            url "https://maven.aliyun.com/repository/central"
+        }
+    }
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+    testCompile group: 'junit', name: 'junit', version: '4.12'
+}
+
+apply from: '../javafxplugin-compat.gradle'
