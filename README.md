@@ -11,7 +11,7 @@ jdk8 ./gradlew runnableJar //jdk8,jdk14都是切换java环境的命令，需自�
 ```
 
 ## 使用
-下载[`javafxplugin-compat.gradle`](https://raw.githubusercontent.com/NingOpenSource/vcsLib/master/javafxplugin-compat.gradle)，或者
+下载[`javafxplugin-compat.gradle`](https://raw.githubusercontent.com/NingOpenSource/javafx-gradle-plugin-compat/master/javafxplugin-compat.gradle)，或者
 ```gradle
-apply from: 'https://raw.githubusercontent.com/NingOpenSource/vcsLib/master/javafxplugin-compat.gradle'
+apply from: 'https://raw.githubusercontent.com/NingOpenSource/javafx-gradle-plugin-compat/master/javafxplugin-compat.gradle'
 ```
