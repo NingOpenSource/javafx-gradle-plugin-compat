@@ -97,18 +97,61 @@ compileTestKotlin {
     kotlinOptions.jvmTarget = compileKotlin.kotlinOptions.jvmTarget
 }
 
+configurations {
+    api {
+        setCanBeConsumed(true)
+        setCanBeResolved(true)
+    }
+    implementation {
+        setCanBeConsumed(true)
+        setCanBeResolved(true)
+    }
+    apiJavaFXCurrentOs {
+        setCanBeConsumed(true)
+        setCanBeResolved(true)
+    }
+    apiJavaFX_Windows {
+        setCanBeConsumed(true)
+        setCanBeResolved(true)
+    }
+    apiJavaFX_Mac {
+        setCanBeConsumed(true)
+        setCanBeResolved(true)
+    }
+    apiJavaFX_Linux {
+        setCanBeConsumed(true)
+        setCanBeResolved(true)
+    }
+}
 
 if (isSupportJavaModule) {
     apply plugin: "org.openjfx.javafxplugin"
-
     application {
         mainModule.set(simpleArgs.getValue(Args.javafxMainModule))
     }
 
+    String javafxVersion = simpleArgs.getValue(Args.javafxVersion)
+    String[] javafxModules = simpleArgs.getValueArray(Args.javafxModules)
     javafx {
-        version = simpleArgs.getValue(Args.javafxVersion)
-        modules = simpleArgs.getValueArray(Args.javafxModules)
+        version = javafxVersion
+        modules = javafxModules
         configuration = "api"
+    }
+    dependencies {
+        javafxModules.each {
+            String moduleName = it.replace(".", "-")
+            String mavenId = "org.openjfx:$moduleName:$javafxVersion"
+            println("mavenId $mavenId")
+            if (!currentOS.isLinux()) {
+                apiJavaFX_Linux("$mavenId:linux")
+            }
+            if (!currentOS.isMacOsX()) {
+                apiJavaFX_Mac("$mavenId:mac")
+            }
+            if (!currentOS.isWindows()) {
+                apiJavaFX_Windows("$mavenId:win")
+            }
+        }
     }
 } else {
     sourceSets {
@@ -129,36 +172,53 @@ if (isSupportJavaModule) {
 }
 
 
-if (plugins.hasPlugin("application")) {
-    configurations {
-        api {
-            setCanBeConsumed(true)
-            setCanBeResolved(true)
-        }
-        implementation {
-            setCanBeConsumed(true)
-            setCanBeResolved(true)
-        }
+if (!plugins.hasPlugin("application"))
+    return
+
+enum JarFlag {
+    linux("-linux"), mac("-mac"), windows("-windows"), all("-all"), current("");
+    final String suffixName
+
+    JarFlag(String suffixName) {
+        this.suffixName = suffixName
     }
-    task runnableJar(type: Jar, dependsOn: [jar], group: "build") {
+}
+
+for (JarFlag jarFlag : JarFlag.values()) {
+    if (!isSupportJavaModule && jarFlag != JarFlag.current) continue
+    task("runnableJar" + (jarFlag == JarFlag.current ? "" : "_${jarFlag.name()}"), type: Jar, dependsOn: [jar], group: "build") {
         manifest {
             attributes(
                     "Manifest-Version": project.version,
-//                "Class-Path": configurations.api.collect { it.getName() }.join(" "),
                     "Main-Class": mainClassName
             )
         }
         def sourceTree = configurations.api.collect { entry -> zipTree(entry) }
         sourceTree.add(zipTree(jar.archiveFile.get().asFile))//加入项目源码编译后的jar
         sourceTree.addAll(configurations.implementation.collect { entry -> zipTree(entry) })
-//        sourceTree.addAll(configurations.compile.collect { entry -> zipTree(entry) })
+        if (isSupportJavaModule && jarFlag != JarFlag.current) {
+            if (!currentOS.isMacOsX() && (jarFlag == JarFlag.mac || jarFlag == JarFlag.all))
+                sourceTree.addAll(configurations.apiJavaFX_Mac.collect { entry -> zipTree(entry) })
+            if (!currentOS.isLinux() && (jarFlag == JarFlag.linux || jarFlag == JarFlag.all))
+                sourceTree.addAll(configurations.apiJavaFX_Linux.collect { entry -> zipTree(entry) })
+            if (!currentOS.isWindows() && (jarFlag == JarFlag.windows || jarFlag == JarFlag.all))
+                sourceTree.addAll(configurations.apiJavaFX_Windows.collect { entry -> zipTree(entry) })
+        }
         from(sourceTree) {
             exclude "META-INF/MANIFEST.MF"
             exclude "META-INF/*.SF"
             exclude "META-INF/*.DSA"
             exclude "META-INF/*.RSA"
+            if (isSupportJavaModule && jarFlag != JarFlag.all && jarFlag != JarFlag.current) {
+                if (jarFlag != JarFlag.mac)
+                    exclude("*.dylib")
+                if (jarFlag != JarFlag.linux)
+                    exclude("*.so")
+                if (jarFlag != JarFlag.windows)
+                    exclude("*.dll")
+            }
         }
-        archiveName("${archiveBaseName.get()}-${JavaVersion.current().toString()}-v${archiveVersion.get()}.${archiveExtension.get()}")
+        archiveName("${archiveBaseName.get()}-${JavaVersion.current().toString()}-v${archiveVersion.get()}${jarFlag.suffixName}.${archiveExtension.get()}")
         destinationDir(file("out/runnableJar"))
     }
 }
